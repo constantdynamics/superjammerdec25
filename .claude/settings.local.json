@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm run dev:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit - MuziekSamen music collaboration app\n\nFeatures:\n- Audio recording with countdown and pause/resume\n- Multi-track playback with mixing console\n- Metronome with tap tempo and time signatures\n- Chat system with timestamped comments\n- Project management with localStorage persistence\n- Mobile-first responsive design with glassmorphism UI\n- PWA ready for installation\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

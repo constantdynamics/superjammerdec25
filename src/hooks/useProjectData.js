@@ -1,32 +1,18 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   saveProject,
   loadProject,
   deleteProject,
   loadAllProjects,
   saveMessages,
-  loadMessages
+  loadMessages,
+  saveAudioBlob,
+  loadAudioBlob,
+  deleteAudioBlob,
+  initDB
 } from '../utils/storageUtils'
 import { generateId } from '../utils/formatUtils'
 import { TRACK_COLORS } from '../utils/audioUtils'
-import {
-  isFirebaseConfigured,
-  signInUser,
-  onAuthChange,
-  getCurrentUser,
-  createProjectInCloud,
-  updateProjectInCloud,
-  deleteProjectFromCloud,
-  getUserProjects,
-  getSharedProjects,
-  subscribeToProject,
-  shareProjectWithCode,
-  joinProjectWithCode,
-  uploadAudioToCloud,
-  deleteAudioFromCloud,
-  addMessageToProject,
-  subscribeToMessages
-} from '../utils/firebase'
 
 export function useProjectData() {
   const [projects, setProjects] = useState([])
@@ -34,210 +20,67 @@ export function useProjectData() {
   const [tracks, setTracks] = useState([])
   const [messages, setMessages] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [user, setUser] = useState(null)
-  const [isOnline, setIsOnline] = useState(isFirebaseConfigured())
-  const [shareCode, setShareCode] = useState(null)
-  const [syncStatus, setSyncStatus] = useState('local') // 'local' | 'syncing' | 'synced' | 'error'
 
-  const unsubscribeProjectRef = useRef(null)
-  const unsubscribeMessagesRef = useRef(null)
-
-  // Initialize auth
+  // Initialize IndexedDB and load projects
   useEffect(() => {
-    if (!isFirebaseConfigured()) {
-      setIsOnline(false)
-      loadLocalData()
-      return
-    }
-
-    const unsubscribe = onAuthChange(async (authUser) => {
-      if (authUser) {
-        setUser(authUser)
-        await loadCloudData(authUser.uid)
-      } else {
-        // Try to sign in anonymously
-        const newUser = await signInUser()
-        if (newUser) {
-          setUser(newUser)
-          await loadCloudData(newUser.uid)
-        } else {
-          loadLocalData()
-        }
-      }
-    })
-
-    return () => unsubscribe()
-  }, [])
-
-  // Load local data (fallback)
-  const loadLocalData = useCallback(() => {
-    const loadedProjects = loadAllProjects()
-    setProjects(loadedProjects)
-
-    if (loadedProjects.length > 0) {
-      const lastProject = loadedProjects[loadedProjects.length - 1]
-      selectProjectLocal(lastProject.id)
-    } else {
-      createProject('Mijn Eerste Song', 'Een nieuwe muzikale creatie')
-    }
-
-    setIsLoading(false)
-  }, [])
-
-  // Load cloud data
-  const loadCloudData = useCallback(async (userId) => {
-    try {
-      setSyncStatus('syncing')
-
-      // Get user's own projects and shared projects
-      const [ownProjects, shared] = await Promise.all([
-        getUserProjects(userId),
-        getSharedProjects(userId)
-      ])
-
-      const allProjects = [...ownProjects, ...shared]
-
-      // Also load local projects that might not be synced yet
-      const localProjects = loadAllProjects()
-      const localOnlyProjects = localProjects.filter(
-        lp => !allProjects.find(cp => cp.id === lp.id)
-      )
-
-      // Sync local-only projects to cloud
-      for (const localProject of localOnlyProjects) {
-        await createProjectInCloud(localProject, userId)
-        allProjects.push(localProject)
-      }
-
-      setProjects(allProjects)
-
-      if (allProjects.length > 0) {
-        await selectProject(allProjects[allProjects.length - 1].id)
-      } else {
-        await createProject('Mijn Eerste Song', 'Een nieuwe muzikale creatie')
-      }
-
-      setSyncStatus('synced')
-    } catch (error) {
-      console.error('Cloud load error:', error)
-      setSyncStatus('error')
-      loadLocalData()
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
-  // Select project (local only)
-  const selectProjectLocal = useCallback((projectId) => {
-    const project = loadProject(projectId)
-    if (project) {
-      setCurrentProject(project)
-      setTracks(project.tracks || [])
-      setMessages(loadMessages(projectId))
-    }
-  }, [])
-
-  // Select project (with cloud sync)
-  const selectProject = useCallback(async (projectId) => {
-    // Cleanup previous subscriptions
-    if (unsubscribeProjectRef.current) {
-      unsubscribeProjectRef.current()
-    }
-    if (unsubscribeMessagesRef.current) {
-      unsubscribeMessagesRef.current()
-    }
-
-    // First load from local
-    const localProject = loadProject(projectId)
-    if (localProject) {
-      setCurrentProject(localProject)
-      setTracks(localProject.tracks || [])
-      setMessages(loadMessages(projectId))
-    }
-
-    // If online, subscribe to real-time updates
-    if (isOnline && isFirebaseConfigured()) {
-      unsubscribeProjectRef.current = subscribeToProject(projectId, (cloudProject) => {
-        if (cloudProject) {
-          setCurrentProject(cloudProject)
-          setTracks(cloudProject.tracks || [])
-          // Also save locally
-          saveProject(cloudProject)
-        }
-      })
-
-      unsubscribeMessagesRef.current = subscribeToMessages(projectId, (cloudMessages) => {
-        setMessages(cloudMessages)
-        saveMessages(projectId, cloudMessages)
-      })
-    }
-  }, [isOnline])
-
-  // Save project (local + cloud)
-  const saveProjectData = useCallback(async (project) => {
-    // Always save locally first
-    saveProject(project)
-
-    // If online, sync to cloud
-    if (isOnline && user) {
-      setSyncStatus('syncing')
+    const init = async () => {
       try {
-        await updateProjectInCloud(project.id, {
-          ...project,
-          tracks: project.tracks?.map(t => ({
-            ...t,
-            audioBlob: undefined,
-            audioBlobUrl: t.cloudUrl || t.audioBlobUrl
-          }))
-        })
-        setSyncStatus('synced')
+        // Initialize IndexedDB
+        await initDB()
+
+        // Load projects from localStorage
+        const loadedProjects = loadAllProjects()
+        setProjects(loadedProjects)
+
+        // Select last project or create new
+        if (loadedProjects.length > 0) {
+          const lastProject = loadedProjects[loadedProjects.length - 1]
+          await selectProject(lastProject.id)
+        } else {
+          createProject('Mijn Eerste Song', 'Een nieuwe muzikale creatie')
+        }
       } catch (error) {
-        console.error('Cloud save error:', error)
-        setSyncStatus('error')
+        console.error('Init error:', error)
+      } finally {
+        setIsLoading(false)
       }
     }
-  }, [isOnline, user])
 
-  // Auto-save when tracks change
+    init()
+  }, [])
+
+  // Save project when tracks change
   useEffect(() => {
-    if (currentProject && tracks.length >= 0) {
+    if (currentProject) {
       const updatedProject = {
         ...currentProject,
         tracks: tracks.map(t => ({
           ...t,
-          audioBlob: undefined
+          audioBlob: undefined, // Don't save blob in localStorage
+          audioBlobUrl: undefined // URL is recreated on load
         })),
         lastModified: new Date().toISOString()
       }
-      saveProjectData(updatedProject)
+      saveProject(updatedProject)
     }
-  }, [tracks])
+  }, [tracks, currentProject])
 
-  // Auto-save messages
+  // Save messages when they change
   useEffect(() => {
     if (currentProject) {
       saveMessages(currentProject.id, messages)
-
-      // Sync messages to cloud
-      if (isOnline && messages.length > 0) {
-        const lastMessage = messages[messages.length - 1]
-        if (lastMessage && !lastMessage.synced) {
-          addMessageToProject(currentProject.id, lastMessage)
-        }
-      }
     }
-  }, [messages, currentProject, isOnline])
+  }, [messages, currentProject])
 
-  // Create project
-  const createProject = useCallback(async (name, description = '') => {
+  // Create new project
+  const createProject = useCallback((name, description = '') => {
     const newProject = {
       id: generateId(),
       name,
       description,
       created: new Date().toISOString(),
       lastModified: new Date().toISOString(),
-      collaborators: [user?.uid ? 'Ik' : 'Ik'],
-      ownerId: user?.uid || 'local',
+      collaborators: ['Ik'],
       settings: {
         tempo: 100,
         key: 'C',
@@ -246,23 +89,43 @@ export function useProjectData() {
       tracks: []
     }
 
-    // Save locally
     saveProject(newProject)
     setProjects(prev => [...prev, newProject])
     setCurrentProject(newProject)
     setTracks([])
     setMessages([])
 
-    // Sync to cloud
-    if (isOnline && user) {
-      await createProjectInCloud(newProject, user.uid)
-    }
-
     return newProject
-  }, [isOnline, user])
+  }, [])
+
+  // Select project and load audio from IndexedDB
+  const selectProject = useCallback(async (projectId) => {
+    const project = loadProject(projectId)
+    if (project) {
+      setCurrentProject(project)
+      setMessages(loadMessages(projectId))
+
+      // Load audio blobs from IndexedDB for each track
+      const tracksWithAudio = await Promise.all(
+        (project.tracks || []).map(async (track) => {
+          const blob = await loadAudioBlob(track.id)
+          if (blob) {
+            return {
+              ...track,
+              audioBlob: blob,
+              audioBlobUrl: URL.createObjectURL(blob)
+            }
+          }
+          return track
+        })
+      )
+
+      setTracks(tracksWithAudio)
+    }
+  }, [])
 
   // Update project settings
-  const updateProjectSettings = useCallback(async (settings) => {
+  const updateProjectSettings = useCallback((settings) => {
     if (currentProject) {
       const updated = {
         ...currentProject,
@@ -270,12 +133,12 @@ export function useProjectData() {
         lastModified: new Date().toISOString()
       }
       setCurrentProject(updated)
-      await saveProjectData(updated)
+      saveProject(updated)
     }
-  }, [currentProject, saveProjectData])
+  }, [currentProject])
 
-  // Update project info
-  const updateProjectInfo = useCallback(async (name, description) => {
+  // Update project name/description
+  const updateProjectInfo = useCallback((name, description) => {
     if (currentProject) {
       const updated = {
         ...currentProject,
@@ -284,34 +147,33 @@ export function useProjectData() {
         lastModified: new Date().toISOString()
       }
       setCurrentProject(updated)
+      saveProject(updated)
       setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))
-      await saveProjectData(updated)
     }
-  }, [currentProject, saveProjectData])
+  }, [currentProject])
 
   // Remove project
-  const removeProject = useCallback(async (projectId) => {
+  const removeProject = useCallback((projectId) => {
     deleteProject(projectId)
     setProjects(prev => prev.filter(p => p.id !== projectId))
-
-    if (isOnline) {
-      await deleteProjectFromCloud(projectId)
-    }
 
     if (currentProject?.id === projectId) {
       const remaining = projects.filter(p => p.id !== projectId)
       if (remaining.length > 0) {
-        await selectProject(remaining[0].id)
+        selectProject(remaining[0].id)
       } else {
-        await createProject('Nieuw Project')
+        createProject('Nieuw Project')
       }
     }
-  }, [currentProject, projects, selectProject, createProject, isOnline])
+  }, [currentProject, projects, selectProject, createProject])
 
-  // Add track
+  // Add track with audio saved to IndexedDB
   const addTrack = useCallback(async (blob, duration, name, instrument = 'other', recordedBy = 'Ik') => {
     const colorIndex = tracks.length % TRACK_COLORS.length
     const trackId = generateId()
+
+    // Save audio blob to IndexedDB
+    await saveAudioBlob(trackId, blob)
 
     const newTrack = {
       id: trackId,
@@ -329,26 +191,8 @@ export function useProjectData() {
     }
 
     setTracks(prev => [...prev, newTrack])
-
-    // Upload audio to cloud
-    if (isOnline && currentProject) {
-      setSyncStatus('syncing')
-      try {
-        const cloudUrl = await uploadAudioToCloud(currentProject.id, trackId, blob)
-        if (cloudUrl) {
-          setTracks(prev => prev.map(t =>
-            t.id === trackId ? { ...t, cloudUrl } : t
-          ))
-        }
-        setSyncStatus('synced')
-      } catch (error) {
-        console.error('Upload error:', error)
-        setSyncStatus('error')
-      }
-    }
-
     return newTrack
-  }, [tracks.length, isOnline, currentProject])
+  }, [tracks.length])
 
   // Update track
   const updateTrack = useCallback((trackId, updates) => {
@@ -359,6 +203,9 @@ export function useProjectData() {
 
   // Remove track
   const removeTrack = useCallback(async (trackId) => {
+    // Delete audio from IndexedDB
+    await deleteAudioBlob(trackId)
+
     setTracks(prev => {
       const track = prev.find(t => t.id === trackId)
       if (track?.audioBlobUrl) {
@@ -366,12 +213,7 @@ export function useProjectData() {
       }
       return prev.filter(t => t.id !== trackId)
     })
-
-    // Delete from cloud
-    if (isOnline && currentProject) {
-      await deleteAudioFromCloud(currentProject.id, trackId)
-    }
-  }, [isOnline, currentProject])
+  }, [])
 
   // Toggle track mute
   const toggleTrackMute = useCallback((trackId) => {
@@ -395,7 +237,7 @@ export function useProjectData() {
   }, [])
 
   // Add message
-  const addMessage = useCallback(async (content, sender = 'Ik', projectTimestamp = null) => {
+  const addMessage = useCallback((content, sender = 'Ik', projectTimestamp = null) => {
     const newMessage = {
       id: generateId(),
       sender,
@@ -406,14 +248,8 @@ export function useProjectData() {
     }
 
     setMessages(prev => [...prev, newMessage])
-
-    // Sync to cloud
-    if (isOnline && currentProject) {
-      await addMessageToProject(currentProject.id, newMessage)
-    }
-
     return newMessage
-  }, [isOnline, currentProject])
+  }, [])
 
   // Remove message
   const removeMessage = useCallback((messageId) => {
@@ -421,7 +257,7 @@ export function useProjectData() {
   }, [])
 
   // Add collaborator
-  const addCollaborator = useCallback(async (name) => {
+  const addCollaborator = useCallback((name) => {
     if (currentProject && !currentProject.collaborators.includes(name)) {
       const updated = {
         ...currentProject,
@@ -429,38 +265,9 @@ export function useProjectData() {
         lastModified: new Date().toISOString()
       }
       setCurrentProject(updated)
-      await saveProjectData(updated)
+      saveProject(updated)
     }
-  }, [currentProject, saveProjectData])
-
-  // Generate share code
-  const generateShareCode = useCallback(async () => {
-    if (!currentProject || !isOnline) return null
-
-    const code = await shareProjectWithCode(currentProject.id)
-    setShareCode(code)
-    return code
-  }, [currentProject, isOnline])
-
-  // Join project with code
-  const joinWithCode = useCallback(async (code) => {
-    if (!user || !isOnline) {
-      throw new Error('Je moet online zijn om een project te joinen')
-    }
-
-    const projectId = await joinProjectWithCode(code, user.uid)
-    if (projectId) {
-      // Reload projects
-      const [ownProjects, shared] = await Promise.all([
-        getUserProjects(user.uid),
-        getSharedProjects(user.uid)
-      ])
-      setProjects([...ownProjects, ...shared])
-      await selectProject(projectId)
-      return true
-    }
-    return false
-  }, [user, isOnline, selectProject])
+  }, [currentProject])
 
   return {
     projects,
@@ -468,10 +275,6 @@ export function useProjectData() {
     tracks,
     messages,
     isLoading,
-    isOnline,
-    user,
-    shareCode,
-    syncStatus,
     createProject,
     selectProject,
     updateProjectSettings,
@@ -485,8 +288,6 @@ export function useProjectData() {
     setTrackVolume,
     addMessage,
     removeMessage,
-    addCollaborator,
-    generateShareCode,
-    joinWithCode
+    addCollaborator
   }
 }

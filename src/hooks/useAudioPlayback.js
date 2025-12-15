@@ -161,21 +161,25 @@ export function useAudioPlayback() {
         console.log(`Track ${track.id}: muted=${track.muted}, hasBuffer=${hasBuffer}`)
 
         if (!track.muted && hasBuffer) {
-          // DEBUG: Play a test beep to verify audio context works
-          if (tracksStarted === 0) {
-            console.log('Playing test beep...')
-            const osc = ctx.createOscillator()
-            const testGain = ctx.createGain()
-            osc.connect(testGain)
-            testGain.connect(ctx.destination)
-            osc.frequency.value = 440
-            testGain.gain.value = 0.3
-            osc.start()
-            osc.stop(ctx.currentTime + 0.2)
+          const buffer = buffersRef.current[track.id]
+
+          // DEBUG: Check if buffer has actual audio data
+          const channelData = buffer.getChannelData(0)
+          let maxSample = 0
+          let sumSamples = 0
+          for (let i = 0; i < Math.min(channelData.length, 10000); i++) {
+            maxSample = Math.max(maxSample, Math.abs(channelData[i]))
+            sumSamples += Math.abs(channelData[i])
+          }
+          console.log(`Buffer ${track.id}: samples=${buffer.length}, maxSample=${maxSample}, avgSample=${sumSamples/10000}`)
+
+          // If buffer appears empty (all zeros), the recording captured silence
+          if (maxSample < 0.001) {
+            console.warn('WARNING: Buffer appears to contain silence!')
           }
 
           const source = ctx.createBufferSource()
-          source.buffer = buffersRef.current[track.id]
+          source.buffer = buffer
 
           // Create fresh gain node for this playback and connect directly to destination
           const trackGain = ctx.createGain()

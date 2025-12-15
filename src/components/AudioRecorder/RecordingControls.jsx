@@ -8,6 +8,7 @@ export function RecordingControls({
   recordingTime,
   countdown,
   hasPermission,
+  error,
   onStartRecording,
   onStopRecording,
   onPauseRecording,
@@ -16,23 +17,44 @@ export function RecordingControls({
   onCancelCountdown,
   onRequestPermission
 }) {
+  const [isRequesting, setIsRequesting] = useState(false)
+
+  const handleRequestPermission = async () => {
+    setIsRequesting(true)
+    try {
+      await onRequestPermission()
+    } finally {
+      setIsRequesting(false)
+    }
+  }
+
   if (!hasPermission) {
     return (
       <div className="flex flex-col items-center gap-4 p-6">
-        <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center">
-          <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-          </svg>
-        </div>
-        <p className="text-gray-400 text-center">
-          Geef toegang tot je microfoon om te kunnen opnemen
-        </p>
         <button
-          onClick={onRequestPermission}
-          className="btn-primary"
+          onClick={handleRequestPermission}
+          disabled={isRequesting}
+          className="w-24 h-24 rounded-full bg-purple-600 hover:bg-purple-700 active:bg-purple-800 flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-purple-500/30 disabled:opacity-50"
         >
-          Microfoon Toestaan
+          {isRequesting ? (
+            <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          )}
         </button>
+        <p className="text-gray-300 text-center font-medium">
+          {isRequesting ? 'Wachten op toestemming...' : 'Tik om microfoon te activeren'}
+        </p>
+        <p className="text-gray-500 text-sm text-center max-w-xs">
+          Je browser vraagt om toestemming voor de microfoon
+        </p>
+        {error && (
+          <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm text-center max-w-xs">
+            {error}
+          </div>
+        )}
       </div>
     )
   }

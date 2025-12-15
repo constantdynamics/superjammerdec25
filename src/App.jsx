@@ -242,6 +242,7 @@ function App() {
               recordingTime={recording.recordingTime}
               countdown={recording.countdown}
               hasPermission={recording.hasPermission}
+              error={recording.error}
               onStartRecording={recording.startRecording}
               onStopRecording={handleStopRecording}
               onPauseRecording={recording.pauseRecording}
@@ -445,6 +446,11 @@ function App() {
         onUpdateInfo={projectData.updateProjectInfo}
         onUpdateSettings={projectData.updateProjectSettings}
         onAddCollaborator={projectData.addCollaborator}
+        isOnline={projectData.isOnline}
+        syncStatus={projectData.syncStatus}
+        shareCode={projectData.shareCode}
+        onGenerateShareCode={projectData.generateShareCode}
+        onJoinWithCode={projectData.joinWithCode}
       />
     </div>
   )

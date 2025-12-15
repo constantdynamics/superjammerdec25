@@ -56,12 +56,25 @@ export function useAudioRecording() {
   const requestPermission = useCallback(async () => {
     try {
       setError(null)
+
+      // Check if getUserMedia is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Je browser ondersteunt geen audio opname. Probeer Chrome of Firefox.')
+      }
+
       const stream = await requestMicrophoneAccess()
       streamRef.current = stream
       setHasPermission(true)
 
       // Setup audio analyser voor level metering
+      // Create AudioContext after user gesture (important for mobile)
       audioContextRef.current = createAudioContext()
+
+      // Resume AudioContext if suspended (required on mobile)
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume()
+      }
+
       const source = audioContextRef.current.createMediaStreamSource(stream)
       analyserRef.current = audioContextRef.current.createAnalyser()
       analyserRef.current.fftSize = 256
@@ -69,7 +82,8 @@ export function useAudioRecording() {
 
       return true
     } catch (err) {
-      setError(err.message)
+      console.error('Microphone permission error:', err)
+      setError(err.message || 'Kon geen toegang krijgen tot de microfoon')
       setHasPermission(false)
       return false
     }

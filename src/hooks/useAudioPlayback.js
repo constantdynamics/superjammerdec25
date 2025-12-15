@@ -161,6 +161,18 @@ export function useAudioPlayback() {
         console.log(`Track ${track.id}: muted=${track.muted}, hasBuffer=${hasBuffer}`)
 
         if (!track.muted && hasBuffer) {
+          // DEBUG: Try playing with HTML Audio element to verify blob works
+          if (track.audioBlob) {
+            const audioUrl = URL.createObjectURL(track.audioBlob)
+            const testAudio = new Audio(audioUrl)
+            testAudio.volume = 1
+            testAudio.play().then(() => {
+              console.log('HTML Audio playing successfully for track:', track.id)
+            }).catch(err => {
+              console.error('HTML Audio failed:', err)
+            })
+          }
+
           const source = ctx.createBufferSource()
           source.buffer = buffersRef.current[track.id]
 

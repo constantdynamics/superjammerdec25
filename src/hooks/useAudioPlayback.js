@@ -48,6 +48,8 @@ export function useAudioPlayback() {
   // Load track audio
   const loadTrack = useCallback(async (trackId, blob) => {
     try {
+      console.log('loadTrack called:', trackId, 'blob size:', blob?.size, 'blob type:', blob?.type)
+
       const ctx = initAudioContext()
 
       // Resume indien gesuspend
@@ -56,6 +58,8 @@ export function useAudioPlayback() {
       }
 
       const buffer = await decodeAudioBlob(ctx, blob)
+      console.log('Decoded audio buffer:', trackId, 'duration:', buffer?.duration, 'channels:', buffer?.numberOfChannels)
+
       buffersRef.current[trackId] = buffer
 
       // Genereer waveform data
@@ -125,9 +129,14 @@ export function useAudioPlayback() {
     try {
       const ctx = initAudioContext()
 
+      // Resume AudioContext - crucial for mobile browsers
       if (ctx.state === 'suspended') {
         await ctx.resume()
       }
+
+      console.log('Starting playback, AudioContext state:', ctx.state)
+      console.log('Available buffers:', Object.keys(buffersRef.current))
+      console.log('Tracks to play:', tracks.map(t => ({ id: t.id, muted: t.muted, volume: t.volume })))
 
       // Stop bestaande sources
       Object.values(sourceNodesRef.current).forEach(source => {
@@ -137,9 +146,14 @@ export function useAudioPlayback() {
       })
       sourceNodesRef.current = {}
 
+      let tracksStarted = 0
+
       // Start alle tracks
       tracks.forEach(track => {
-        if (!track.muted && buffersRef.current[track.id]) {
+        const hasBuffer = !!buffersRef.current[track.id]
+        console.log(`Track ${track.id}: muted=${track.muted}, hasBuffer=${hasBuffer}`)
+
+        if (!track.muted && hasBuffer) {
           const source = ctx.createBufferSource()
           source.buffer = buffersRef.current[track.id]
 
@@ -150,13 +164,18 @@ export function useAudioPlayback() {
           }
 
           source.connect(gainNodesRef.current[track.id])
-          gainNodesRef.current[track.id].gain.value = track.solo
-            ? track.volume
-            : (tracks.some(t => t.solo) ? 0 : track.volume)
+
+          // Calculate volume based on solo state
+          const hasSoloTrack = tracks.some(t => t.solo)
+          const effectiveVolume = track.solo ? track.volume : (hasSoloTrack ? 0 : track.volume)
+          gainNodesRef.current[track.id].gain.value = effectiveVolume
+
+          console.log(`Playing track ${track.id} with volume ${effectiveVolume}`)
 
           const offset = Math.min(fromTime, source.buffer.duration)
           source.start(0, offset)
           sourceNodesRef.current[track.id] = source
+          tracksStarted++
 
           // Handle track end
           source.onended = () => {
@@ -171,6 +190,8 @@ export function useAudioPlayback() {
           }
         }
       })
+
+      console.log(`Started ${tracksStarted} tracks`)
 
       setIsPlaying(true)
       startTimeRef.current = ctx.currentTime - fromTime

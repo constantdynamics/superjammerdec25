@@ -21,10 +21,17 @@ export function useAudioPlayback() {
   const initAudioContext = useCallback(() => {
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
       audioContextRef.current = createAudioContext()
+    }
+
+    // Always ensure masterGain is connected
+    if (!masterGainRef.current) {
       masterGainRef.current = audioContextRef.current.createGain()
       masterGainRef.current.connect(audioContextRef.current.destination)
-      masterGainRef.current.gain.value = masterVolume
     }
+    masterGainRef.current.gain.value = masterVolume
+
+    console.log('AudioContext initialized, masterGain value:', masterGainRef.current.gain.value)
+
     return audioContextRef.current
   }, [masterVolume])
 
@@ -157,20 +164,21 @@ export function useAudioPlayback() {
           const source = ctx.createBufferSource()
           source.buffer = buffersRef.current[track.id]
 
-          // Maak gain node indien nodig
-          if (!gainNodesRef.current[track.id]) {
-            gainNodesRef.current[track.id] = ctx.createGain()
-            gainNodesRef.current[track.id].connect(masterGainRef.current)
-          }
+          // Create fresh gain node for this playback and connect directly to destination
+          const trackGain = ctx.createGain()
+          trackGain.connect(ctx.destination)  // Connect directly to destination for debugging
 
-          source.connect(gainNodesRef.current[track.id])
+          source.connect(trackGain)
 
           // Calculate volume based on solo state
           const hasSoloTrack = tracks.some(t => t.solo)
           const effectiveVolume = track.solo ? track.volume : (hasSoloTrack ? 0 : track.volume)
-          gainNodesRef.current[track.id].gain.value = effectiveVolume
+          trackGain.gain.value = effectiveVolume * masterVolume
 
-          console.log(`Playing track ${track.id} with volume ${effectiveVolume}`)
+          console.log(`Playing track ${track.id} with volume ${effectiveVolume}, masterVolume ${masterVolume}, final gain: ${trackGain.gain.value}`)
+
+          // Store for later reference
+          gainNodesRef.current[track.id] = trackGain
 
           const offset = Math.min(fromTime, source.buffer.duration)
           source.start(0, offset)
